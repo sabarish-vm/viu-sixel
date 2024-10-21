@@ -16,7 +16,7 @@ jobs:
       - name: Lint
         run: cargo clippy -- -D warnings
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --features=sixel
       - name: Run tests
         run: cargo test --verbose
 
