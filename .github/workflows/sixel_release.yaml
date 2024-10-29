@@ -1,0 +1,95 @@
+name: WithSixel
+
+on: workflow_dispatch
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build and upload
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            
+          - build: macos
+            os: macos-latest
+            target: aarch64-apple-darwin
+            
+          # - build: linux
+          #   os: ubuntu-latest
+          #   target: x86_64-unknown-linux-musl
+
+          # - build: macos
+          #   os: macos-latest
+          #   target: x86_64-apple-darwin
+
+          # - build: windows
+          #   os: windows-latest
+          #   target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Get the release version from the tag
+        shell: bash
+        run: echo "VERSION=$(grep '^\s*version' Cargo.toml | cut -d "=" -f 2 | cut -d \" -f 2)" >> $GITHUB_ENV
+
+      - name: Install libsixel on Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get -y install libsixel-dev
+
+        
+      - name: Install libsixel on mac
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          brew install libsixel
+          echo "LIBRARY_PATH=$(echo $(brew --prefix libsixel)/lib):$LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --verbose --release --features=sixel --target ${{ matrix.target }}
+
+      - name: Build archive
+        shell: bash
+        run: |
+          # Replace with the name of your binary
+          binary_name="viu"
+
+          dirname="$binary_name-${{ matrix.target }}"
+          mkdir "$dirname"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
+          else
+            mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
+          fi
+
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            7z a "$dirname.zip" "$dirname"
+            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
+          else
+            tar -czf "$dirname.tar.gz" "$dirname"
+            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name : "v${{ env.VERSION }}"
+          files: |
+            ${{ env.ASSET }}
